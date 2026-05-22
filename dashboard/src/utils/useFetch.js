@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const API = import.meta.env.VITE_API_URL || "https://sakila360-production.up.railway.app";
 
 export function useFetch(endpoint) {
   const [data,    setData]    = useState(null);
