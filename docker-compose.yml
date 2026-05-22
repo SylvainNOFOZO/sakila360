@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  # ── Base de données SOURCE (Sakila original) ─────────────────────────────────
+  db_source:
+    image: mysql:8.0
+    container_name: sakila_source
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: sakila_root
+      MYSQL_DATABASE: sakila
+      MYSQL_USER: sakila_user
+      MYSQL_PASSWORD: sakila_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init/sakila-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./init/sakila-data.sql:/docker-entrypoint-initdb.d/02-data.sql
+      - db_source_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psakila_root"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sakila_net
+
+  # ── Data Warehouse (schéma en étoile) ────────────────────────────────────────
+  db_dwh:
+    image: mysql:8.0
+    container_name: sakila_dwh
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: dwh_root
+      MYSQL_DATABASE: sakila_dwh
+      MYSQL_USER: dwh_user
+      MYSQL_PASSWORD: dwh_pass
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./dwh/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - db_dwh_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pdwh_root"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sakila_net
+
+  # ── Pipeline ETL Python ───────────────────────────────────────────────────────
+  etl:
+    build:
+      context: ./etl
+      dockerfile: Dockerfile
+    container_name: sakila_etl
+    environment:
+      SRC_HOST: db_source
+      SRC_PORT: 3306
+      SRC_DB: sakila
+      SRC_USER: sakila_user
+      SRC_PASS: sakila_pass
+      DWH_HOST: db_dwh
+      DWH_PORT: 3306
+      DWH_DB: sakila_dwh
+      DWH_USER: dwh_user
+      DWH_PASS: dwh_pass
+    depends_on:
+      db_source:
+        condition: service_healthy
+      db_dwh:
+        condition: service_healthy
+    networks:
+      - sakila_net
+    restart: "no"
+
+  # ── API Backend (Express.js → requêtes OLAP) ──────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: sakila_api
+    restart: unless-stopped
+    environment:
+      DWH_HOST: db_dwh
+      DWH_PORT: 3306
+      DWH_DB: sakila_dwh
+      DWH_USER: dwh_user
+      DWH_PASS: dwh_pass
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      db_dwh:
+        condition: service_healthy
+    networks:
+      - sakila_net
+
+  # ── Dashboard React ───────────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4000
+    container_name: sakila_dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    networks:
+      - sakila_net
+
+volumes:
+  db_source_data:
+  db_dwh_data:
+
+networks:
+  sakila_net:
+    driver: bridge
