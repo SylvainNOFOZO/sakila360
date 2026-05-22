@@ -71,26 +71,28 @@ app.get("/api/revenue-monthly", async (req, res) => {
 app.get("/api/top-late-fees", async (req, res) => {
   try {
     const rows = await q(`
-      SELECT
-        s.city         AS store_city,
-        s.manager_name,
-        s.store_id,
-        f.title,
-        f.category,
-        ROUND(SUM(r.late_fee), 2)     AS total_late_fees,
-        COUNT(r.rental_key)           AS nb_rentals,
-        RANK() OVER (
-          PARTITION BY r.store_key
-          ORDER BY SUM(r.late_fee) DESC
-        ) AS rnk
-      FROM fact_rental r
-      JOIN dim_film  f ON f.film_key  = r.film_key
-      JOIN dim_store s ON s.store_key = r.store_key
-      WHERE r.late_fee > 0
-      GROUP BY r.store_key, s.city, s.manager_name, s.store_id,
-               f.film_key, f.title, f.category
-      HAVING rnk <= 5
-      ORDER BY s.store_id, rnk
+      SELECT * FROM (
+        SELECT
+          s.city         AS store_city,
+          s.manager_name,
+          s.store_id,
+          f.title,
+          f.category,
+          ROUND(SUM(r.late_fee), 2)     AS total_late_fees,
+          COUNT(r.rental_key)           AS nb_rentals,
+          RANK() OVER (
+            PARTITION BY r.store_key
+            ORDER BY SUM(r.late_fee) DESC
+          ) AS rnk
+        FROM fact_rental r
+        JOIN dim_film  f ON f.film_key  = r.film_key
+        JOIN dim_store s ON s.store_key = r.store_key
+        WHERE r.late_fee > 0
+        GROUP BY r.store_key, s.city, s.manager_name, s.store_id,
+                 f.film_key, f.title, f.category
+      ) ranked
+      WHERE rnk <= 5
+      ORDER BY store_id, rnk
     `);
     res.json(rows);
   } catch (e) {
