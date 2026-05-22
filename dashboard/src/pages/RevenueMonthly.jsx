@@ -29,10 +29,9 @@ export default function RevenueMonthly() {
 
     const datasets = categories.map((cat, i) => {
       const color = PALETTE[i % PALETTE.length];
-      const values = labels.map((_, mi) => {
-        const row = rows.find(r => r.month === mi + 1 && r.category === cat);
-        return row ? row[cat] ?? 0 : 0;
-      });
+      // rows est déjà pivoté par l'API : chaque row = { month, month_name, Action: x, Comedy: y, … }
+      // On récupère directement la valeur de la catégorie sur chaque row trié par mois.
+      const values = rows.map(row => row[cat] ?? 0);
       return {
         label: cat,
         data: values,
